@@ -1,1 +1,470 @@
-PASTE-YOUR-DEPLOYED-PAPER-URL-HERE
+# Content Refresh Prioritization Using Machine Learning
+
+## Abstract
+
+Content teams often need to decide which pages should be reviewed first when resources for content refreshes are limited. This study investigates whether page-level search, performance, engagement, content, and freshness signals can be used to identify pages with an observed downward trend and improve prioritization compared with a transparent baseline. Using the provided anonymized content-refresh dataset containing 30,000 page-level observations, I developed a binary classification workflow while excluding identifiers and variables that directly encode the outcome. A machine-learning model was evaluated against a simple baseline using the same held-out evaluation data and standard classification metrics. The resulting analysis provides directional, measurable decision support for prioritizing content-refresh opportunities while avoiding causal claims about whether a refresh itself improves performance.
+
+---
+
+# 1. Introduction / Problem Statement
+
+Content-refresh programs require teams to decide which existing pages deserve attention first. When a large number of pages are available for review, manually examining every page can be inefficient.
+
+The practical problem addressed in this study is therefore:
+
+> **Can page-level performance and content signals help identify pages that show an observed decline and support better prioritization of content-refresh opportunities?**
+
+The objective is not to predict the future with certainty or claim that refreshing a page causes improved performance. Instead, the objective is to create a transparent and measurable decision-support workflow that can rank pages according to observed signals associated with decline.
+
+This framing reflects a common content-operations problem: limited resources require prioritization, while decisions should remain supported by measurable evidence and human review.
+
+---
+
+# 2. Research Question
+
+### Research Question
+
+Can page-level content and performance signals be used to identify pages that show an observed downward trend, and can a machine-learning model improve prioritization compared with a simple baseline?
+
+### Decision Supported
+
+The model is intended to support the prioritization of content-refresh opportunities.
+
+The output should be interpreted as a ranked decision-support signal indicating which pages may deserve earlier review.
+
+It should not be interpreted as proof that:
+
+* a page will definitely continue to decline;
+* refreshing a page will cause performance improvement;
+* the model establishes a causal relationship;
+* the model should replace human content judgment.
+
+---
+
+# 3. Data
+
+## Dataset
+
+This study uses the provided anonymized content-refresh dataset supplied as part of the ML internship assignment.
+
+The dataset contains:
+
+* **30,000 page-level observations**
+* Search-demand signals
+* Competition information
+* Cost-per-click information
+* Content characteristics
+* Search and traffic performance
+* Engagement measurements
+* Content-age information
+* Freshness indicators
+* Position and impression indicators
+* Trend information
+
+The dataset contains 43 available fields.
+
+## Main Feature Groups
+
+### Search and competition
+
+Examples include:
+
+* `search_volume`
+* `competition`
+* `competition_level`
+* `cpc`
+
+### Content characteristics
+
+Examples include:
+
+* `content_type`
+* `main_intent`
+* `word_count`
+* `char_count`
+
+### Performance
+
+Examples include:
+
+* `impressions_90d`
+* `clicks_90d`
+* `pageviews_90d`
+* `sessions_90d`
+* `users_90d`
+
+### Engagement
+
+Examples include:
+
+* `engaged_sessions_90d`
+* `scroll_events`
+* `engagement_rate`
+* `scroll_rate`
+
+### Recent performance
+
+Examples include:
+
+* `impressions_last_30d`
+* `clicks_last_30d`
+* `sessions_last_30d`
+* `impressions_prev_30d`
+* `clicks_prev_30d`
+* `sessions_prev_30d`
+
+### Freshness and age
+
+Examples include:
+
+* `content_age_days`
+* `age_tier`
+* `days_since_last_update`
+* `freshness_tier`
+
+### Search visibility
+
+Examples include:
+
+* `ctr`
+* `avg_position`
+* `impression_tier`
+* `position_tier`
+
+## Target
+
+The classification target is derived from `trend_direction`.
+
+A page is labelled as an **observed decline** when:
+
+```text
+trend_direction = down
+```
+
+Other trend categories are treated as non-decline observations for the binary prioritization task.
+
+## Excluded Variables
+
+The following fields are not used as predictive features:
+
+* `content_id`
+* `client_id`
+* `trend_direction`
+* `trend_pct`
+
+The identifier fields are excluded because they identify observations rather than provide meaningful predictive information.
+
+`trend_direction` and `trend_pct` are excluded because they directly contain information about the outcome and would create target leakage if used as predictors.
+
+No private client names, private URLs, private queries, or other private information are intentionally included in the modeling workflow.
+
+---
+
+# 4. Methodology
+
+## 4.1 Problem Formulation
+
+The task is formulated as a binary classification problem.
+
+The model estimates whether an observation belongs to the observed-decline category.
+
+Conceptually:
+
+```text
+Page-level signals
+        ↓
+Feature preprocessing
+        ↓
+Baseline + ML model
+        ↓
+Predicted decline probability
+        ↓
+Prioritization ranking
+```
+
+The predicted probability can then be used as one component of a content-refresh priority score.
+
+---
+
+## 4.2 Features
+
+Candidate features are selected from variables that represent information available before or around the decision point.
+
+The feature groups include:
+
+1. Search demand
+2. Competition
+3. Content characteristics
+4. Historical performance
+5. Recent performance
+6. Engagement
+7. Content age
+8. Freshness
+9. Search visibility
+
+Identifier and outcome-derived fields are excluded.
+
+Categorical features are encoded before modeling, while numerical features are retained in numerical form.
+
+---
+
+## 4.3 Baseline
+
+A simple majority-class baseline is used as a transparent benchmark.
+
+The baseline predicts the most common class observed in the training data for every test observation.
+
+This provides a useful reference because a machine-learning model should demonstrate value beyond simply predicting the dominant class.
+
+---
+
+## 4.4 Machine-Learning Model
+
+A tree-based classification model is used because the dataset contains a mixture of numerical and categorical signals and potentially nonlinear relationships.
+
+The model is trained only on the training data.
+
+The test data are held out until final evaluation.
+
+The model's output probability can also be used to rank pages from higher to lower observed-decline likelihood.
+
+---
+
+## 4.5 Validation Design
+
+The dataset is separated into training and held-out test data.
+
+The training set is used for:
+
+* preprocessing;
+* fitting the baseline;
+* fitting the machine-learning model.
+
+The test set is used only for final evaluation.
+
+Both the baseline and machine-learning model are evaluated on the same held-out observations.
+
+This makes the comparison more directly interpretable.
+
+---
+
+## 4.6 Leakage Checks
+
+Several leakage risks were considered.
+
+First, `trend_direction` was excluded because it defines the target.
+
+Second, `trend_pct` was excluded because it directly represents the underlying trend magnitude.
+
+Third, identifier fields such as `content_id` and `client_id` were excluded because they do not represent generalizable page-level signals.
+
+The modeling workflow therefore attempts to ensure that the model learns from page and performance characteristics rather than directly receiving the answer.
+
+---
+
+# 5. Results
+
+## 5.1 Model vs Baseline
+
+The final results should be generated directly from the executed notebook.
+
+| Model                  |           Accuracy |          Precision |             Recall |                 F1 |
+| ---------------------- | -----------------: | -----------------: | -----------------: | -----------------: |
+| Majority baseline      | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** |
+| Machine-learning model | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** |
+
+The machine-learning model should be considered useful only if its evaluation metrics demonstrate meaningful improvement over the baseline for the chosen decision objective.
+
+Because the dataset may contain class imbalance, accuracy alone should not determine the conclusion. Precision, recall, and F1 should also be considered.
+
+---
+
+## 5.2 Interpretation
+
+The primary interpretation is whether the model provides additional measurable signal compared with the simple baseline.
+
+If the model improves recall, it may be useful for identifying a larger share of pages showing observed decline.
+
+If precision improves, the model may produce a more focused review queue.
+
+If F1 improves, this indicates a better balance between precision and recall for the binary classification task.
+
+These results should be interpreted as predictive evidence within the supplied dataset rather than evidence of causality.
+
+---
+
+# 6. Limitations & Honest Framing
+
+This study has several limitations.
+
+### 1. Observational data
+
+The analysis is based on observed page-level data. It does not use a controlled experiment.
+
+Therefore, the results cannot establish that any specific content change causes improved performance.
+
+### 2. Target definition
+
+The target represents an observed trend category in the supplied dataset. It should not automatically be interpreted as permanent or future decline.
+
+### 3. Dataset scope
+
+The analysis is based on the supplied anonymized dataset and should not automatically be generalized to every website, industry, search environment, or content strategy.
+
+### 4. Model uncertainty
+
+Machine-learning predictions are probabilistic. A high model score does not guarantee that a page will decline.
+
+### 5. Human review remains necessary
+
+Content quality, search intent, topical relevance, technical SEO, business value, and editorial considerations may not be fully captured by the available variables.
+
+### 6. Ranking is not causality
+
+The prioritization score indicates which observations appear more suitable for review based on measured signals. It does not prove that refreshing those pages will produce a positive outcome.
+
+---
+
+# 7. Ranked Recommendations
+
+The model should be used as a prioritization layer rather than an automatic decision-maker.
+
+## Priority 1 — Review pages with strong decline signals
+
+Pages receiving high predicted decline probability should be placed earlier in the review queue.
+
+These pages deserve human inspection before deciding whether a refresh is appropriate.
+
+## Priority 2 — Examine recent performance changes
+
+Compare recent 30-day performance with the previous 30-day period.
+
+Large directional changes can help identify pages where the situation may warrant investigation.
+
+## Priority 3 — Review freshness
+
+Pages with long periods since their last update should receive additional attention when combined with other decline signals.
+
+Freshness should not be treated as an automatic reason to refresh.
+
+## Priority 4 — Examine search visibility
+
+Review impressions, clicks, CTR, and average position together.
+
+A decline in clicks may have different implications depending on whether impressions, rankings, or CTR also changed.
+
+## Priority 5 — Review content fit
+
+After quantitative prioritization, evaluate:
+
+* search intent;
+* content completeness;
+* information quality;
+* outdated claims;
+* structure and readability;
+* relevance to the target audience.
+
+The final decision should remain human-led.
+
+---
+
+# 8. Artifacts
+
+The deployed research paper should present the following artifacts generated from the notebook.
+
+## Artifact 1 — Dataset Overview
+
+A table showing:
+
+* number of observations;
+* number of features;
+* target distribution;
+* missing-value summary.
+
+## Artifact 2 — Baseline vs Model
+
+A comparison chart showing the selected evaluation metrics for:
+
+* majority baseline;
+* machine-learning model.
+
+## Artifact 3 — Target Distribution
+
+A chart showing the number or percentage of:
+
+* observed decline;
+* non-decline observations.
+
+## Artifact 4 — Feature Importance
+
+A model-based feature-importance visualization showing which available signals contributed most to the model's predictions.
+
+Feature importance should be interpreted as model behavior, not as proof that a feature causes decline.
+
+## Artifact 5 — Priority Queue
+
+A table containing the highest-priority observations based on model output.
+
+Example structure:
+
+| Rank | Observation      |    Predicted Score | Priority |
+| ---: | ---------------- | -----------------: | -------- |
+|    1 | Page observation | Actual model score | High     |
+|    2 | Page observation | Actual model score | High     |
+|    3 | Page observation | Actual model score | High     |
+
+Only public-safe identifiers should be shown.
+
+---
+
+# 9. Reproducibility
+
+The analysis is implemented in a Jupyter/Google Colab notebook.
+
+The notebook contains:
+
+1. Dataset discovery
+2. Data audit
+3. Feature preparation
+4. Target construction
+5. Leakage checks
+6. Train/test split
+7. Baseline evaluation
+8. Machine-learning evaluation
+9. Visualization
+10. Ranking
+11. Research-paper artifacts
+
+The notebook should be executed from top to bottom before publication to confirm that all results and charts are reproducible.
+
+The repository contains the research notebook under:
+
+```text
+work/notebooks/capstone.ipynb
+```
+
+The deployed paper should link to the corresponding public repository and notebook.
+
+---
+
+# 10. Conclusion
+
+This study demonstrates a practical machine-learning workflow for content-refresh prioritization using anonymized page-level signals.
+
+The central contribution is not an automated content-refresh decision, but a measurable prioritization framework that compares machine learning against a transparent baseline.
+
+The model can help identify observations that deserve earlier human review when resources are limited.
+
+The findings should remain directional: the analysis measures relationships in the supplied data and does not demonstrate that refreshing a page causes improved performance.
+
+---
+
+# Acknowledgments & Data Credit
+
+This work was completed as part of the FlyRank Machine Learning Internship.
+
+The analysis was built using the provided anonymized internship dataset.
+
+**Data credit:** Built on the FlyRank ML Internship dataset.
+
+The dataset is used only for the purposes permitted by the internship assignment, and the analysis intentionally avoids exposing private client information, private queries, or other sensitive data.
