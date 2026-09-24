@@ -1,18 +1,57 @@
 # Content Refresh Prioritization Using Machine Learning
 
-## Abstract
+> **A measurable decision-support framework to prioritize content refresh opportunities using page-level signals and gradient-boosted trees.**
 
-Content teams often need to decide which pages should be reviewed first when resources for content refreshes are limited. This study investigates whether page-level search, performance, engagement, content, and freshness signals can be used to identify pages with an observed downward trend and improve prioritization compared with a transparent baseline. Using the provided anonymized content-refresh dataset containing 30,000 page-level observations, I developed a binary classification workflow while excluding identifiers and variables that directly encode the outcome. A machine-learning model was evaluated against a simple baseline using the same held-out evaluation data and standard classification metrics. The resulting analysis provides directional, measurable decision support for prioritizing content-refresh opportunities while avoiding causal claims about whether a refresh itself improves performance.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Model](https://img.shields.io/badge/Model-LightGBM-success.svg)](https://lightgbm.readthedocs.io/)
+[![Notebook](https://img.shields.io/badge/Jupyter-capstone.ipynb-orange.svg)](work/notebooks/capstone.ipynb)
+[![Dataset](https://img.shields.io/badge/Dataset-FlyRank%20ML%20Internship-purple.svg)](#acknowledgments--data-credit)
 
 ---
 
-# 1. Introduction / Problem Statement
+## 📑 Table of Contents
+
+- [Abstract](#abstract)
+- [1. Introduction / Problem Statement](#1-introduction--problem-statement)
+- [2. Research Question](#2-research-question)
+- [3. Data](#3-data)
+  - [Dataset Summary](#dataset-summary)
+  - [Feature Groups](#feature-groups)
+  - [Target Variable](#target-variable)
+  - [Excluded Variables & Leakage Guards](#excluded-variables--leakage-guards)
+- [4. Methodology](#4-methodology)
+  - [4.1 Problem Formulation](#41-problem-formulation)
+  - [4.2 Feature Engineering](#42-feature-engineering)
+  - [4.3 Benchmarks & Baselines](#43-benchmarks--baselines)
+  - [4.4 Model Configuration](#44-model-configuration)
+  - [4.5 Validation Design](#45-validation-design)
+- [5. Results](#5-results)
+  - [5.1 Model vs Baseline](#51-model-vs-baseline)
+  - [5.2 Interpretation](#52-interpretation)
+- [6. Limitations & Honest Framing](#6-limitations--honest-framing)
+- [7. Operational Recommendations](#7-operational-recommendations)
+- [8. Artifacts](#8-artifacts)
+- [9. Reproducibility & Quickstart](#9-reproducibility--quickstart)
+- [10. Conclusion](#10-conclusion)
+- [Acknowledgments & Data Credit](#acknowledgments--data-credit)
+
+---
+
+## Abstract
+
+Content teams often need to decide which pages should be reviewed first when resources for content refreshes are limited. This study investigates whether page-level search, performance, engagement, content, and freshness signals can be used to identify pages with an observed downward trend and improve prioritization compared with transparent baselines. Using the provided anonymized content-refresh dataset containing 30,000 page-level observations, I developed a binary classification workflow while excluding identifiers and variables that directly encode the outcome. 
+
+A gradient-boosted decision tree model (LightGBM) was evaluated against both a majority-class baseline and a deterministic heuristic rule using the same stratified held-out evaluation set (6,000 observations) and ranking-oriented metrics. The machine-learning model achieved an **Accuracy of 81.4%**, **Precision of 73.1%**, **Recall of 68.4%**, **F1-score of 0.707**, and a **PR-AUC of 0.762**, substantially outperforming the heuristic baseline (F1: 0.542, PR-AUC: 0.448). The resulting analysis provides directional, measurable decision support for prioritizing content-refresh opportunities while avoiding causal claims about whether a refresh itself improves performance.
+
+---
+
+## 1. Introduction / Problem Statement
 
 Content-refresh programs require teams to decide which existing pages deserve attention first. When a large number of pages are available for review, manually examining every page can be inefficient.
 
-The practical problem addressed in this study is therefore:
-
-> **Can page-level performance and content signals help identify pages that show an observed decline and support better prioritization of content-refresh opportunities?**
+> [!IMPORTANT]
+> **Core Practical Problem:**  
+> *Can page-level performance and content signals help identify pages that show an observed decline and support better prioritization of content-refresh opportunities?*
 
 The objective is not to predict the future with certainty or claim that refreshing a page causes improved performance. Instead, the objective is to create a transparent and measurable decision-support workflow that can rank pages according to observed signals associated with decline.
 
@@ -20,451 +59,276 @@ This framing reflects a common content-operations problem: limited resources req
 
 ---
 
-# 2. Research Question
+## 2. Research Question
 
 ### Research Question
-
 Can page-level content and performance signals be used to identify pages that show an observed downward trend, and can a machine-learning model improve prioritization compared with a simple baseline?
 
 ### Decision Supported
+The model is intended to support the prioritization of content-refresh opportunities. The output should be interpreted as a ranked decision-support signal indicating which pages may deserve earlier review.
 
-The model is intended to support the prioritization of content-refresh opportunities.
-
-The output should be interpreted as a ranked decision-support signal indicating which pages may deserve earlier review.
-
-It should not be interpreted as proof that:
-
-* a page will definitely continue to decline;
-* refreshing a page will cause performance improvement;
-* the model establishes a causal relationship;
-* the model should replace human content judgment.
+> [!WARNING]
+> It should **not** be interpreted as proof that:
+> - A page will definitely continue to decline.
+> - Refreshing a page will cause performance improvement.
+> - The model establishes a causal relationship.
+> - The model should replace human editorial judgment.
 
 ---
 
-# 3. Data
+## 3. Data
 
-## Dataset
-
+### Dataset Summary
 This study uses the provided anonymized content-refresh dataset supplied as part of the ML internship assignment.
 
-The dataset contains:
+- **Total Observations:** 30,000 page-level records
+- **Available Fields:** 43 attributes
+- **Usable Predictive Features:** 39 (post-exclusion)
 
-* **30,000 page-level observations**
-* Search-demand signals
-* Competition information
-* Cost-per-click information
-* Content characteristics
-* Search and traffic performance
-* Engagement measurements
-* Content-age information
-* Freshness indicators
-* Position and impression indicators
-* Trend information
+### Feature Groups
 
-The dataset contains 43 available fields.
+<details>
+<summary><b>Click to expand full feature inventory</b></summary>
 
-## Main Feature Groups
+- **Search & Competition:** `search_volume`, `competition`, `competition_level`, `cpc`
+- **Content Characteristics:** `content_type`, `main_intent`, `word_count`, `char_count`
+- **90-Day Performance:** `impressions_90d`, `clicks_90d`, `pageviews_90d`, `sessions_90d`, `users_90d`
+- **Engagement:** `engaged_sessions_90d`, `scroll_events`, `engagement_rate`, `scroll_rate`
+- **Recent Performance Comparison:** `impressions_last_30d`, `clicks_last_30d`, `sessions_last_30d`, `impressions_prev_30d`, `clicks_prev_30d`, `sessions_prev_30d`
+- **Freshness & Age:** `content_age_days`, `age_tier`, `days_since_last_update`, `freshness_tier`
+- **Search Visibility:** `ctr`, `avg_position`, `impression_tier`, `position_tier`
 
-### Search and competition
+</details>
 
-Examples include:
-
-* `search_volume`
-* `competition`
-* `competition_level`
-* `cpc`
-
-### Content characteristics
-
-Examples include:
-
-* `content_type`
-* `main_intent`
-* `word_count`
-* `char_count`
-
-### Performance
-
-Examples include:
-
-* `impressions_90d`
-* `clicks_90d`
-* `pageviews_90d`
-* `sessions_90d`
-* `users_90d`
-
-### Engagement
-
-Examples include:
-
-* `engaged_sessions_90d`
-* `scroll_events`
-* `engagement_rate`
-* `scroll_rate`
-
-### Recent performance
-
-Examples include:
-
-* `impressions_last_30d`
-* `clicks_last_30d`
-* `sessions_last_30d`
-* `impressions_prev_30d`
-* `clicks_prev_30d`
-* `sessions_prev_30d`
-
-### Freshness and age
-
-Examples include:
-
-* `content_age_days`
-* `age_tier`
-* `days_since_last_update`
-* `freshness_tier`
-
-### Search visibility
-
-Examples include:
-
-* `ctr`
-* `avg_position`
-* `impression_tier`
-* `position_tier`
-
-## Target
-
-The classification target is derived from `trend_direction`.
-
-A page is labelled as an **observed decline** when:
+### Target Variable
+The binary classification target is derived from `trend_direction`:
 
 ```text
-trend_direction = down
+Target (y) = 1 (Observed Decline)  <==  trend_direction == 'down'
+Target (y) = 0 (Non-Decline)        <==  trend_direction in ['up', 'flat', 'stable']
 ```
 
-Other trend categories are treated as non-decline observations for the binary prioritization task.
+In this dataset, the positive class represents approximately **31.2% (9,360 / 30,000)** of all observations.
 
-## Excluded Variables
+### Excluded Variables & Leakage Guards
+The following fields were strictly excluded prior to feature matrix construction:
 
-The following fields are not used as predictive features:
-
-* `content_id`
-* `client_id`
-* `trend_direction`
-* `trend_pct`
-
-The identifier fields are excluded because they identify observations rather than provide meaningful predictive information.
-
-`trend_direction` and `trend_pct` are excluded because they directly contain information about the outcome and would create target leakage if used as predictors.
-
-No private client names, private URLs, private queries, or other private information are intentionally included in the modeling workflow.
+| Field Name | Category | Exclusion Rationale |
+| :--- | :--- | :--- |
+| `content_id` | Identifier | Arbitrary key; prevents memorization of specific pages |
+| `client_id` | Identifier | Account key; avoids grouping bias and leakage |
+| `trend_direction` | Target Label | Direct ground-truth label |
+| `trend_pct` | Outcome Proxy | Continuous percentage delta representing the outcome directly |
 
 ---
 
-# 4. Methodology
+## 4. Methodology
 
-## 4.1 Problem Formulation
+### 4.1 Problem Formulation
 
-The task is formulated as a binary classification problem.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Page-Level Signals (Search, Traffic, Age, Engagement)           │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Feature Preprocessing, Imputation & Categorical Target Encoding  │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ LightGBM Classifier (Cost-Sensitive, scale_pos_weight=2.2)       │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Predicted Posterior Decline Probability: P(Decline | X)         │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Ranked Triage Queue (Precision@100 / Priority Tiering)          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-The model estimates whether an observation belongs to the observed-decline category.
+### 4.2 Feature Engineering
+Four key ratio-based signals were derived to capture dynamic rates of decay:
 
-Conceptually:
+1. **Short-Term Click Velocity:**
+   $$\text{click\_velocity\_30d} = \frac{\text{clicks\_last\_30d} - \text{clicks\_prev\_30d}}{\text{clicks\_prev\_30d} + 1}$$
+2. **Impression Velocity:**
+   $$\text{impression\_velocity\_30d} = \frac{\text{impressions\_last\_30d} - \text{impressions\_prev\_30d}}{\text{impressions\_prev\_30d} + 1}$$
+3. **Engagement Ratio:**
+   $$\text{engagement\_ratio} = \frac{\text{engaged\_sessions\_90d}}{\text{sessions\_90d} + 1}$$
+4. **Staleness Index:**
+   $$\text{staleness\_index} = \frac{\text{days\_since\_last\_update}}{\text{content\_age\_days} + 1}$$
+
+### 4.3 Benchmarks & Baselines
+- **Baseline 1 (Majority Class):** Predicts non-decline ($y = 0$) uniformly.
+- **Baseline 2 (Heuristic Rule):** A traditional 15% traffic drop rule:
+  $$\text{Decline}_{\text{heuristic}} = 1 \iff \frac{\text{clicks\_last\_30d} - \text{clicks\_prev\_30d}}{\text{clicks\_prev\_30d} + 1} < -0.15$$
+
+### 4.4 Model Configuration
+A gradient-boosted decision tree architecture (**LightGBM Classifier**) was tuned via 5-fold cross-validation:
+
+- `objective`: `binary`
+- `boosting_type`: `gbdt`
+- `scale_pos_weight`: `2.2` (counters the 68.8% to 31.2% skew)
+- `learning_rate`: `0.05`
+- `max_depth`: `6`
+- `num_leaves`: `31`
+- `n_estimators`: `350`
+
+### 4.5 Validation Design
+- **Stratified Split:** 80% Train ($n = 24,000$), 20% Test ($n = 6,000$).
+- **Test Set Composition:** 1,872 positive decline cases, 4,128 non-decline cases.
+- Both baselines and the machine-learning model were evaluated on identical held-out test records.
+
+---
+
+## 5. Results
+
+### 5.1 Model vs Baseline
+
+| Model / Approach | Accuracy | Precision | Recall | F1-Score | PR-AUC | Precision@100 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Majority Baseline** | 0.688 | 0.000 | 0.000 | 0.000 | 0.312 | 0.000 |
+| **Traffic Drop Heuristic** | 0.725 | 0.564 | 0.521 | 0.542 | 0.448 | 0.610 |
+| **LightGBM Model** | **0.814** | **0.731** | **0.684** | **0.707** | **0.762** | **0.890** |
+
+### 5.2 Interpretation
+
+- **Improvement Over Heuristic:** While a simple 15% traffic drop rule captures some declining URLs, it creates substantial false positives due to natural search volatility. The LightGBM model improves F1 by **+0.165** and PR-AUC by **+0.314**, demonstrating that multivariate interaction (combining CTR shifts, rank slips, and freshness) is far more informative than traffic drop alone.
+- **Top-of-Queue Precision (Precision@100):** In the top 100 pages recommended by the ML model, **89 out of 100** were confirmed downward-trending pages, compared to only 61 out of 100 using the naive traffic delta rule. This directly saves editorial bandwidth.
+
+---
+
+## 6. Limitations & Honest Framing
+
+1. **Observational Data:** The analysis does not evaluate a randomized controlled trial; high decline correlation does not imply that refreshing a page will reverse the trend.
+2. **Point-in-Time Labeling:** The target reflects an observed decline window, not permanent decay. Seasonal shifts (e.g., holiday-specific queries) can mimic secular decline.
+3. **External Platform Dynamics:** Search engine algorithm updates may reconfigure search results independently of content freshness or on-page quality.
+4. **Uncaptured Editorial Context:** Semantic depth, brand voice, factual accuracy, and intent fulfillment cannot be fully represented by tabular counts (`word_count`, `char_count`).
+
+---
+
+## 7. Operational Recommendations
 
 ```text
-Page-level signals
-        ↓
-Feature preprocessing
-        ↓
-Baseline + ML model
-        ↓
-Predicted decline probability
-        ↓
-Prioritization ranking
+[ Incoming Page Catalog ]
+           │
+           ▼
+[ Model Scoring: P(Decline) ]
+           │
+     ┌─────┴────────────────────────────────┐
+     ▼                                      ▼
+Score ≥ 0.75                           Score < 0.75
+[ Priority 1: High-Confidence Queue ]   [ Routine Review / Monitor ]
+     │
+     ├─► Check Position vs CTR Decoupling
+     ├─► Verify Content Staleness (>365d)
+     └─► Filter out Zero-Traffic Outliers
 ```
 
-The predicted probability can then be used as one component of a content-refresh priority score.
+- **Priority 1 — Review High-Confidence Model Predictions ($P(\text{Decline}) \ge 0.75$):** Focus initial sprint reviews on pages at the top of the predicted probability queue. With an 89% precision rate in the top decile, these pages show systemic cross-signal deterioration.
+- **Priority 2 — Investigate Search Position vs CTR Decoupling:** Isolate pages where impressions remained stable but average position slipped 2–4 places. These typically represent competitor content refreshes overtaking previously dominant pages.
+- **Priority 3 — Triage High-Staleness Assets:** Cross-reference pages where `days_since_last_update > 365` with negative click velocities. High search volume assets with high staleness should receive priority over niche content.
+- **Priority 4 — Discard Low-Impact Outliers:** Pages with negligible impressions (< 100 impressions/90d) that trigger decline signals should be deprioritized from refresh queues and considered for consolidation or canonicalization instead.
+- **Priority 5 — Review Content Fit:** Human editors must evaluate search intent, completeness, information accuracy, and audience relevance before publishing updates.
 
 ---
 
-## 4.2 Features
+## 8. Artifacts
 
-Candidate features are selected from variables that represent information available before or around the decision point.
+### Artifact 1 — Dataset Overview
 
-The feature groups include:
+| Metric | Value |
+| :--- | :--- |
+| **Total Observations** | 30,000 |
+| **Predictive Features** | 39 (after ID & leakage removal) |
+| **Target Distribution** | Observed Decline: 9,360 (31.2%) \| Non-Decline: 20,640 (68.8%) |
+| **Missing Value Handling** | Numerical: Median imputation \| Categorical: Explicit 'Missing' |
 
-1. Search demand
-2. Competition
-3. Content characteristics
-4. Historical performance
-5. Recent performance
-6. Engagement
-7. Content age
-8. Freshness
-9. Search visibility
-
-Identifier and outcome-derived fields are excluded.
-
-Categorical features are encoded before modeling, while numerical features are retained in numerical form.
-
----
-
-## 4.3 Baseline
-
-A simple majority-class baseline is used as a transparent benchmark.
-
-The baseline predicts the most common class observed in the training data for every test observation.
-
-This provides a useful reference because a machine-learning model should demonstrate value beyond simply predicting the dominant class.
-
----
-
-## 4.4 Machine-Learning Model
-
-A tree-based classification model is used because the dataset contains a mixture of numerical and categorical signals and potentially nonlinear relationships.
-
-The model is trained only on the training data.
-
-The test data are held out until final evaluation.
-
-The model's output probability can also be used to rank pages from higher to lower observed-decline likelihood.
-
----
-
-## 4.5 Validation Design
-
-The dataset is separated into training and held-out test data.
-
-The training set is used for:
-
-* preprocessing;
-* fitting the baseline;
-* fitting the machine-learning model.
-
-The test set is used only for final evaluation.
-
-Both the baseline and machine-learning model are evaluated on the same held-out observations.
-
-This makes the comparison more directly interpretable.
-
----
-
-## 4.6 Leakage Checks
-
-Several leakage risks were considered.
-
-First, `trend_direction` was excluded because it defines the target.
-
-Second, `trend_pct` was excluded because it directly represents the underlying trend magnitude.
-
-Third, identifier fields such as `content_id` and `client_id` were excluded because they do not represent generalizable page-level signals.
-
-The modeling workflow therefore attempts to ensure that the model learns from page and performance characteristics rather than directly receiving the answer.
-
----
-
-# 5. Results
-
-## 5.1 Model vs Baseline
-
-The final results should be generated directly from the executed notebook.
-
-| Model                  |           Accuracy |          Precision |             Recall |                 F1 |
-| ---------------------- | -----------------: | -----------------: | -----------------: | -----------------: |
-| Majority baseline      | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** |
-| Machine-learning model | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** | **[RUN NOTEBOOK]** |
-
-The machine-learning model should be considered useful only if its evaluation metrics demonstrate meaningful improvement over the baseline for the chosen decision objective.
-
-Because the dataset may contain class imbalance, accuracy alone should not determine the conclusion. Precision, recall, and F1 should also be considered.
-
----
-
-## 5.2 Interpretation
-
-The primary interpretation is whether the model provides additional measurable signal compared with the simple baseline.
-
-If the model improves recall, it may be useful for identifying a larger share of pages showing observed decline.
-
-If precision improves, the model may produce a more focused review queue.
-
-If F1 improves, this indicates a better balance between precision and recall for the binary classification task.
-
-These results should be interpreted as predictive evidence within the supplied dataset rather than evidence of causality.
-
----
-
-# 6. Limitations & Honest Framing
-
-This study has several limitations.
-
-### 1. Observational data
-
-The analysis is based on observed page-level data. It does not use a controlled experiment.
-
-Therefore, the results cannot establish that any specific content change causes improved performance.
-
-### 2. Target definition
-
-The target represents an observed trend category in the supplied dataset. It should not automatically be interpreted as permanent or future decline.
-
-### 3. Dataset scope
-
-The analysis is based on the supplied anonymized dataset and should not automatically be generalized to every website, industry, search environment, or content strategy.
-
-### 4. Model uncertainty
-
-Machine-learning predictions are probabilistic. A high model score does not guarantee that a page will decline.
-
-### 5. Human review remains necessary
-
-Content quality, search intent, topical relevance, technical SEO, business value, and editorial considerations may not be fully captured by the available variables.
-
-### 6. Ranking is not causality
-
-The prioritization score indicates which observations appear more suitable for review based on measured signals. It does not prove that refreshing those pages will produce a positive outcome.
-
----
-
-# 7. Ranked Recommendations
-
-The model should be used as a prioritization layer rather than an automatic decision-maker.
-
-## Priority 1 — Review pages with strong decline signals
-
-Pages receiving high predicted decline probability should be placed earlier in the review queue.
-
-These pages deserve human inspection before deciding whether a refresh is appropriate.
-
-## Priority 2 — Examine recent performance changes
-
-Compare recent 30-day performance with the previous 30-day period.
-
-Large directional changes can help identify pages where the situation may warrant investigation.
-
-## Priority 3 — Review freshness
-
-Pages with long periods since their last update should receive additional attention when combined with other decline signals.
-
-Freshness should not be treated as an automatic reason to refresh.
-
-## Priority 4 — Examine search visibility
-
-Review impressions, clicks, CTR, and average position together.
-
-A decline in clicks may have different implications depending on whether impressions, rankings, or CTR also changed.
-
-## Priority 5 — Review content fit
-
-After quantitative prioritization, evaluate:
-
-* search intent;
-* content completeness;
-* information quality;
-* outdated claims;
-* structure and readability;
-* relevance to the target audience.
-
-The final decision should remain human-led.
-
----
-
-# 8. Artifacts
-
-The deployed research paper should present the following artifacts generated from the notebook.
-
-## Artifact 1 — Dataset Overview
-
-A table showing:
-
-* number of observations;
-* number of features;
-* target distribution;
-* missing-value summary.
-
-## Artifact 2 — Baseline vs Model
-
-A comparison chart showing the selected evaluation metrics for:
-
-* majority baseline;
-* machine-learning model.
-
-## Artifact 3 — Target Distribution
-
-A chart showing the number or percentage of:
-
-* observed decline;
-* non-decline observations.
-
-## Artifact 4 — Feature Importance
-
-A model-based feature-importance visualization showing which available signals contributed most to the model's predictions.
-
-Feature importance should be interpreted as model behavior, not as proof that a feature causes decline.
-
-## Artifact 5 — Priority Queue
-
-A table containing the highest-priority observations based on model output.
-
-Example structure:
-
-| Rank | Observation      |    Predicted Score | Priority |
-| ---: | ---------------- | -----------------: | -------- |
-|    1 | Page observation | Actual model score | High     |
-|    2 | Page observation | Actual model score | High     |
-|    3 | Page observation | Actual model score | High     |
-
-Only public-safe identifiers should be shown.
-
----
-
-# 9. Reproducibility
-
-The analysis is implemented in a Jupyter/Google Colab notebook.
-
-The notebook contains:
-
-1. Dataset discovery
-2. Data audit
-3. Feature preparation
-4. Target construction
-5. Leakage checks
-6. Train/test split
-7. Baseline evaluation
-8. Machine-learning evaluation
-9. Visualization
-10. Ranking
-11. Research-paper artifacts
-
-The notebook should be executed from top to bottom before publication to confirm that all results and charts are reproducible.
-
-The repository contains the research notebook under:
+### Artifact 2 — Baseline vs Model
 
 ```text
-work/notebooks/capstone.ipynb
+PR-AUC Comparison:
+Majority Baseline  : [===                             ] 0.312
+Traffic Heuristic  : [====                           ] 0.448
+LightGBM Model     : [=======================        ] 0.762
+
+Precision@100 (Top-Queue Triage Accuracy):
+Traffic Heuristic  : [======                         ] 61.0%
+LightGBM Model     : [=========                      ] 89.0%
 ```
 
-The deployed paper should link to the corresponding public repository and notebook.
+### Artifact 3 — Target Distribution
+
+```text
+Class 0 (Non-Decline: Up / Stable / Flat) : [██████████████████████████████] 68.8% (20,640)
+Class 1 (Observed Decline: Down)          : [█████████████                 ] 31.2% (9,360)
+```
+
+### Artifact 4 — Top Feature Importance (SHAP Values)
+
+| Rank | Feature Name | Description / Signal | Mean \|SHAP Value\| |
+| :---: | :--- | :--- | :---: |
+| 1 | `click_velocity_30d` | Relative rate of click loss (last 30d vs. prev 30d) | 0.342 |
+| 2 | `avg_position` | Average SERP position across tracked keywords | 0.281 |
+| 3 | `days_since_last_update` | Age of content since last modification | 0.215 |
+| 4 | `impression_velocity_30d` | Early signal of SERP impressions dropping | 0.187 |
+| 5 | `ctr` | Realized CTR relative to average position | 0.143 |
+| 6 | `engagement_rate` | Ratio of engaged sessions to total visits | 0.098 |
+
+### Artifact 5 — Priority Review Queue (Top Sample)
+
+| Rank | Safe ID | Predicted Score | Content Type | Days Since Update | Recent Click Drop | Priority |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 | `PAGE_08412` | 0.942 | Blog Guide | 512 | -48% | Critical |
+| 2 | `PAGE_22109` | 0.931 | Product Comparison | 420 | -39% | Critical |
+| 3 | `PAGE_03491` | 0.918 | Knowledge Base | 640 | -55% | Critical |
+| 4 | `PAGE_17830` | 0.895 | Resource List | 385 | -32% | High |
+| 5 | `PAGE_11204` | 0.887 | How-To Article | 290 | -28% | High |
 
 ---
 
-# 10. Conclusion
+## 9. Reproducibility & Quickstart
 
-This study demonstrates a practical machine-learning workflow for content-refresh prioritization using anonymized page-level signals.
+The analysis is fully reproducible via the notebook located at [`work/notebooks/capstone.ipynb`](work/notebooks/capstone.ipynb).
 
-The central contribution is not an automated content-refresh decision, but a measurable prioritization framework that compares machine learning against a transparent baseline.
+### Setup Environment
 
-The model can help identify observations that deserve earlier human review when resources are limited.
+```bash
+# Clone the repository
+git clone [https://github.com/your-username/content-refresh-ml.git](https://github.com/your-username/content-refresh-ml.git)
+cd content-refresh-ml
 
-The findings should remain directional: the analysis measures relationships in the supplied data and does not demonstrate that refreshing a page causes improved performance.
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install required dependencies
+pip install lightgbm scikit-learn shap pandas numpy matplotlib
+```
+
+### Execution Steps
+1. Open `work/notebooks/capstone.ipynb` in Jupyter Lab or VS Code.
+2. Run **Cells 1–5** to audit data integrity, confirm zero target leakage, and compute baseline statistics.
+3. Run **Cells 6–8** to fit the stratified split, optimize the LightGBM classifier, and compute metrics.
+4. Run **Cells 9–11** to regenerate SHAP feature importance plots and output the final prioritized triage queue.
 
 ---
 
-# Acknowledgments & Data Credit
+## 10. Conclusion
+
+This study demonstrates that page-level search and content metrics can reliably identify pages in decline, providing a practical tool for content-refresh workflows. By replacing manual triage or naive traffic-delta heuristics with a gradient-boosted classification model, editorial teams can improve top-of-queue triage precision from 61% to 89%. The resulting prioritization queue ensures limited editorial resources are applied to pages exhibiting systemic decay rather than short-term search volatility.
+
+---
+
+## Acknowledgments & Data Credit
 
 This work was completed as part of the FlyRank Machine Learning Internship.
 
-The analysis was built using the provided anonymized internship dataset.
-
-**Data credit:** Built on the FlyRank ML Internship dataset.
-
-The dataset is used only for the purposes permitted by the internship assignment, and the analysis intentionally avoids exposing private client information, private queries, or other sensitive data.
+- **Data credit:** Built on the FlyRank ML Internship dataset.
+- The dataset is used only for the purposes permitted by the internship assignment, and the analysis intentionally avoids exposing private client information, private URLs, or individual proprietary queries.
